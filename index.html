@@ -1,429 +1,529 @@
-import React, { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, query } from 'firebase/firestore';
-
-// Lucide-React icons for UI elements
-const Plus = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 24} height={props.size || 24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <path d="M5 12h14" /><path d="M12 5v14" />
-  </svg>
-);
-const X = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 24} height={props.size || 24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-  </svg>
-);
-const BookOpen = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 24} height={props.size || 24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <path d="M2 13h6" /><path d="M2 9h6" /><path d="M2 5h6" /><path d="M8 5v14" /><path d="M14 5v14" /><path d="M20 5v14" /><path d="M14 9h6" /><path d="M14 13h6" /><path d="M14 17h6" />
-  </svg>
-);
-const Globe = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 24} height={props.size || 24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <circle cx="12" cy="12" r="10" /><path d="M12 2a15.3 15.3 0 0 0 4 10 15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0-4-10 15.3 15.3 0 0 0 4-10z" /><path d="M2 12h20" />
-  </svg>
-);
-
-// Get Firebase configuration from the environment
-const firebaseConfig = typeof __firebase_config !== 'undefined'
-  ? JSON.parse(__firebase_config)
-  : {};
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-// Initialize Firebase App
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-
-// Component for adding a new conversation
-const AddConversationForm = ({ userId, onCancel }) => {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Casual conversation');
-  const [lines, setLines] = useState([{ speaker: '', text: '' }]);
-  const [portugueseLines, setPortugueseLines] = useState([{ speaker: '', text: '' }]);
-  const [vocabulary, setVocabulary] = useState([{ word: '', definition: '' }]);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Helper function to update line data
-  const updateLine = (lines, setLines, index, field, value) => {
-    const newLines = [...lines];
-    newLines[index][field] = value;
-    setLines(newLines);
-  };
-
-  // Helper function to add a new line
-  const addLine = (lines, setLines) => {
-    setLines([...lines, { speaker: '', text: '' }]);
-  };
-
-  // Helper function to remove a line
-  const removeLine = (lines, setLines, index) => {
-    const newLines = lines.filter((_, i) => i !== index);
-    setLines(newLines);
-  };
-
-  // Helper function to add a new vocabulary word
-  const addVocabulary = () => {
-    setVocabulary([...vocabulary, { word: '', definition: '' }]);
-  };
-
-  // Helper function to update a vocabulary word
-  const updateVocabulary = (index, field, value) => {
-    const newVocab = [...vocabulary];
-    newVocab[index][field] = value;
-    setVocabulary(newVocab);
-  };
-
-  // Function to submit the new conversation to Firestore
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!userId) {
-      setError("User not authenticated. Please wait.");
-      return;
-    }
-    setIsSaving(true);
-    setError(null);
-    try {
-      const conversationCollectionRef = collection(db, `artifacts/${appId}/public/data/conversations`);
-      await addDoc(conversationCollectionRef, {
-        title: title,
-        description: description,
-        category: category,
-        lines: lines.map(line => ({ speaker: line.speaker, text: line.text })),
-        portugueseTranslation: portugueseLines.map(line => ({ speaker: line.speaker, text: line.text })),
-        vocabulary: vocabulary.map(vocab => ({ word: vocab.word, definition: vocab.definition })),
-        createdAt: new Date().toISOString(),
-      });
-      // Reset form after successful submission
-      setTitle('');
-      setDescription('');
-      setLines([{ speaker: '', text: '' }]);
-      setPortugueseLines([{ speaker: '', text: '' }]);
-      setVocabulary([{ word: '', definition: '' }]);
-      onCancel();
-    } catch (e) {
-      console.error("Error adding document: ", e);
-      setError("Failed to save conversation. Please try again.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-70 flex items-center justify-center p-4 z-50">
-      <div className="bg-gray-800 text-gray-100 rounded-xl shadow-2xl p-6 w-full max-w-4xl max-h-[95vh] overflow-y-auto relative">
-        <button onClick={onCancel} className="absolute top-4 right-4 p-2 rounded-full text-gray-300 hover:bg-gray-700 transition-colors" aria-label="Close form">
-          <X size={24} />
-        </button>
-        <h2 className="text-3xl font-bold mb-6 text-center text-red-500">Add New Conversation</h2>
-        {error && (<div className="p-3 mb-4 bg-red-800 text-red-100 rounded-lg text-sm">{error}</div>)}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-300 mb-1">Title</label>
-            <input type="text" id="title" value={title} onChange={(e) => setTitle(e.target.value)} required className="w-full px-4 py-2 border border-gray-600 rounded-md bg-gray-700 text-gray-100 focus:ring-red-500 focus:border-red-500 transition-colors" />
-          </div>
-          <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-300 mb-1">Description</label>
-            <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows="3" className="w-full px-4 py-2 border border-gray-600 rounded-md bg-gray-700 text-gray-100 focus:ring-red-500 focus:border-red-500 transition-colors" />
-          </div>
-          <div>
-            <label htmlFor="category" className="block text-sm font-medium text-gray-300 mb-1">Category</label>
-            <select id="category" value={category} onChange={(e) => setCategory(e.target.value)} required className="w-full px-4 py-2 border border-gray-600 rounded-md bg-gray-700 text-gray-100 focus:ring-red-500 focus:border-red-500 transition-colors">
-              <option value="Casual conversation">Casual conversation</option>
-              <option value="Workplace">Workplace</option>
-              <option value="Ordering food">Ordering food</option>
-              <option value="Travel">Travel</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-gray-200">English Conversation Lines</h3>
-            {lines.map((line, index) => (
-              <div key={index} className="flex space-x-2 items-center bg-gray-700 p-3 rounded-lg border border-gray-600">
-                <input type="text" placeholder="Speaker Name" value={line.speaker} onChange={(e) => updateLine(lines, setLines, index, 'speaker', e.target.value)} className="w-1/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100" required />
-                <textarea placeholder="Dialogue Text" value={line.text} onChange={(e) => updateLine(lines, setLines, index, 'text', e.target.value)} className="w-2/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100" rows="1" required />
-                <button type="button" onClick={() => removeLine(lines, setLines, index)} className="p-2 text-red-500 hover:text-red-400 transition-colors" aria-label="Remove line"><X size={20} /></button>
-              </div>
-            ))}
-            <button type="button" onClick={() => addLine(lines, setLines)} className="w-full flex items-center justify-center px-4 py-2 border border-dashed border-gray-500 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">
-              <Plus size={20} className="mr-2" /> Add English line
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-gray-200">Portuguese Translation Lines</h3>
-            {portugueseLines.map((line, index) => (
-              <div key={index} className="flex space-x-2 items-center bg-gray-700 p-3 rounded-lg border border-gray-600">
-                <input type="text" placeholder="Speaker Name" value={line.speaker} onChange={(e) => updateLine(portugueseLines, setPortugueseLines, index, 'speaker', e.target.value)} className="w-1/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100" required />
-                <textarea placeholder="Dialogue Text" value={line.text} onChange={(e) => updateLine(portugueseLines, setPortugueseLines, index, 'text', e.target.value)} className="w-2/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100" rows="1" required />
-                <button type="button" onClick={() => removeLine(portugueseLines, setPortugueseLines, index)} className="p-2 text-red-500 hover:text-red-400 transition-colors" aria-label="Remove line"><X size={20} /></button>
-              </div>
-            ))}
-            <button type="button" onClick={() => addLine(portugueseLines, setPortugueseLines)} className="w-full flex items-center justify-center px-4 py-2 border border-dashed border-gray-500 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">
-              <Plus size={20} className="mr-2" /> Add Portuguese line
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-gray-200">Vocabulary</h3>
-            {vocabulary.map((vocab, index) => (
-              <div key={index} className="flex space-x-2 items-center bg-gray-700 p-3 rounded-lg border border-gray-600">
-                <input type="text" placeholder="Word" value={vocab.word} onChange={(e) => updateVocabulary(index, 'word', e.target.value)} className="w-1/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100" required />
-                <input type="text" placeholder="Definition" value={vocab.definition} onChange={(e) => updateVocabulary(index, 'definition', e.target.value)} className="w-2/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100" required />
-              </div>
-            ))}
-            <button type="button" onClick={addVocabulary} className="w-full flex items-center justify-center px-4 py-2 border border-dashed border-gray-500 rounded-md text-gray-300 hover:bg-gray-700 transition-colors">
-              <Plus size={20} className="mr-2" /> Add vocabulary word
-            </button>
-          </div>
-
-          <button type="submit" disabled={isSaving} className="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            {isSaving ? 'Saving...' : 'Save Conversation'}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-// Function to highlight a specific phrase in the text
-const HighlightText = ({ text, highlights }) => {
-  if (!highlights || highlights.length === 0) {
-    return <span>{text}</span>;
-  }
-  const regex = new RegExp(`(${highlights.join('|')})`, 'gi');
-  const parts = text.split(regex);
-
-  return (
-    <span>
-      {parts.map((part, i) =>
-        highlights.some(h => part.toLowerCase() === h.toLowerCase()) ? (
-          <span key={i} className="bg-yellow-400 text-gray-900 font-bold px-1 rounded-sm">
-            {part}
-          </span>
-        ) : (
-          part
-        )
-      )}
-    </span>
-  );
-};
-
-// Main application component
-const App = () => {
-  const [userId, setUserId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [conversations, setConversations] = useState([]);
-  const [selectedConversation, setSelectedConversation] = useState(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [authReady, setAuthReady] = useState(false);
-  const [filterCategory, setFilterCategory] = useState('All');
-  const [language, setLanguage] = useState('en'); // 'en' for English, 'pt' for Portuguese
-  const [showVocabulary, setShowVocabulary] = useState(false);
-
-  // Effect to handle Firebase authentication
-  useEffect(() => {
-    const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-    const authenticate = async () => {
-      try {
-        if (token) {
-          await signInWithCustomToken(auth, token);
-        } else {
-          await signInAnonymously(auth);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Immersion English - Live Conversations</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for the Netflix-like background and font */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000000; /* Deep black for Netflix feel */
         }
-      } catch (error) {
-        console.error("Firebase authentication error:", error);
-      } finally {
-        onAuthStateChanged(auth, (user) => {
-          setUserId(user ? user.uid : null);
-          setAuthReady(true);
-          setLoading(false);
-        });
-      }
-    };
-    authenticate();
-  }, []);
+        /* Keyframe animation for the gradient button */
+        @keyframes gradient-animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-  // Effect to listen for real-time conversation updates
-  useEffect(() => {
-    if (authReady) {
-      const collectionPath = `artifacts/${appId}/public/data/conversations`;
-      const q = query(collection(db, collectionPath));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const conversationsData = [];
-        querySnapshot.forEach((doc) => {
-          conversationsData.push({ id: doc.id, ...doc.data() });
-        });
-        setConversations(conversationsData);
-      }, (error) => {
-        console.error("Error fetching conversations:", error);
-      });
-      return () => unsubscribe();
-    }
-  }, [authReady]);
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Firebase CDNs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-  // Filter conversations based on the selected category
-  const filteredConversations = conversations.filter(conv =>
-    filterCategory === 'All' || conv.category === filterCategory
-  );
+        // Define global variables for Firebase configuration and app ID.
+        // These are typically provided by the Canvas environment.
+        window.__firebase_config = typeof window.__firebase_config !== 'undefined' ? window.__firebase_config : '{}';
+        window.__app_id = typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id';
+        window.__initial_auth_token = typeof window.__initial_auth_token !== 'undefined' ? window.__initial_auth_token : null;
 
-  const vocabularyHighlights = selectedConversation ? selectedConversation.vocabulary.map(v => v.word).concat('Burger King') : [];
+        // Parse the Firebase configuration
+        const firebaseConfig = JSON.parse(window.__firebase_config);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-950">
-        <p className="text-xl text-gray-300">Loading website...</p>
-      </div>
-    );
-  }
+        // Initialize Firebase App
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app); // Make db global
+        window.auth = getAuth(app); // Make auth global
+        window.appId = window.__app_id; // Make appId global
 
-  return (
-    <div className="font-sans antialiased text-gray-100 bg-gray-950 min-h-screen p-4 sm:p-8">
-      <div className="fixed top-2 right-2 text-xs text-gray-400 bg-gray-800 p-2 rounded-md z-50">
-        Admin User ID: {userId}
-      </div>
-      <header className="text-center mb-10">
-        <h1 className="text-5xl font-extrabold text-red-500 mb-2">Immersion English</h1>
-        <p className="text-xl text-gray-400">Real-life conversations from the UK & USA</p>
-      </header>
+        // Lucide-React icons for UI elements - defined directly as React components
+        const Plus = (props) => (
+          React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', width: props.size || 24, height: props.size || 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round', strokeLinejoin: 'round', ...props },
+            React.createElement('path', { d: 'M5 12h14' }),
+            React.createElement('path', { d: 'M12 5v14' })
+          )
+        );
+        const X = (props) => (
+          React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', width: props.size || 24, height: props.size || 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round', strokeLinejoin: 'round', ...props },
+            React.createElement('path', { d: 'M18 6 6 18' }),
+            React.createElement('path', { d: 'm6 6 12 12' })
+          )
+        );
+        const BookOpen = (props) => (
+          React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', width: props.size || 24, height: props.size || 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round', strokeLinejoin: 'round', ...props },
+            React.createElement('path', { d: 'M2 13h6' }),
+            React.createElement('path', { d: 'M2 9h6' }),
+            React.createElement('path', { d: 'M2 5h6' }),
+            React.createElement('path', { d: 'M8 5v14' }),
+            React.createElement('path', { d: 'M14 5v14' }),
+            React.createElement('path', { d: 'M20 5v14' }),
+            React.createElement('path', { d: 'M14 9h6' }),
+            React.createElement('path', { d: 'M14 13h6' }),
+            React.createElement('path', { d: 'M14 17h6' })
+          )
+        );
+        const Globe = (props) => (
+          React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', width: props.size || 24, height: props.size || 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round', strokeLinejoin: 'round', ...props },
+            React.createElement('circle', { cx: '12', cy: '12', r: '10' }),
+            React.createElement('path', { d: 'M12 2a15.3 15.3 0 0 0 4 10 15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0-4-10 15.3 15.3 0 0 0 4-10z' }),
+            React.createElement('path', { d: 'M2 12h20' })
+          )
+        );
 
-      {selectedConversation ? (
-        <div className="max-w-4xl mx-auto bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-10 transition-transform transform hover:scale-[1.01] duration-300">
-          <div className="flex justify-between items-center mb-6">
-            <button
-              onClick={() => { setSelectedConversation(null); setLanguage('en'); setShowVocabulary(false); }}
-              className="flex items-center text-blue-500 hover:text-blue-400 transition-colors font-medium"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Back to Conversations
-            </button>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setLanguage(language === 'en' ? 'pt' : 'en')}
-                className="flex items-center px-4 py-2 bg-gray-700 text-gray-100 rounded-full hover:bg-gray-600 transition-colors"
-              >
-                <Globe size={18} className="mr-2" />
-                {language === 'en' ? 'Ver em Português' : 'See in English'}
-              </button>
-              <button
-                onClick={() => setShowVocabulary(!showVocabulary)}
-                className="flex items-center px-4 py-2 bg-gray-700 text-gray-100 rounded-full hover:bg-gray-600 transition-colors"
-              >
-                <BookOpen size={18} className="mr-2" />
-                Vocabulary
-              </button>
-            </div>
-          </div>
-          <h2 className="text-4xl font-bold mb-3 text-red-500">{selectedConversation.title}</h2>
-          <p className="text-lg text-gray-300 mb-8">{selectedConversation.description}</p>
-          
-          {showVocabulary && selectedConversation.vocabulary && selectedConversation.vocabulary.length > 0 && (
-            <div className="bg-gray-900 rounded-xl p-4 mb-8 border border-gray-700">
-              <h3 className="text-2xl font-bold text-red-500 mb-4">Vocabulary</h3>
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {selectedConversation.vocabulary.map((vocab, index) => (
-                  <li key={index} className="p-3 bg-gray-800 rounded-lg">
-                    <p className="font-bold text-lg text-blue-400">{vocab.word}</p>
-                    <p className="text-sm text-gray-300">{vocab.definition}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+        // Component for adding a new conversation
+        const AddConversationForm = ({ userId, onCancel }) => {
+          const [title, setTitle] = React.useState('');
+          const [description, setDescription] = React.useState('');
+          const [category, setCategory] = React.useState('Casual conversation');
+          const [lines, setLines] = React.useState([{ speaker: '', text: '' }]);
+          const [portugueseLines, setPortugueseLines] = React.useState([{ speaker: '', text: '' }]);
+          const [vocabulary, setVocabulary] = React.useState([{ word: '', definition: '' }]);
+          const [isSaving, setIsSaving] = React.useState(false);
+          const [error, setError] = React.useState(null);
 
-          <div className="space-y-6">
-            {(language === 'en' ? selectedConversation.lines : selectedConversation.portugueseTranslation).map((line, index) => (
-              <div key={index} className={`flex ${index % 2 === 0 ? 'justify-start' : 'justify-end'}`}>
-                <div className={`max-w-[80%] rounded-xl shadow-sm p-4 ${index % 2 === 0 ? 'bg-blue-600 text-white rounded-bl-none' : 'bg-red-600 text-white rounded-br-none'}`}>
-                  <p className="font-semibold text-lg mb-1">{line.speaker}</p>
-                  <p className="text-base">
-                    <HighlightText
-                      text={line.text}
-                      highlights={vocabularyHighlights}
-                    />
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setFilterCategory('All')}
-                className={`px-4 py-2 rounded-full font-semibold transition-colors ${filterCategory === 'All' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setFilterCategory('Casual conversation')}
-                className={`px-4 py-2 rounded-full font-semibold transition-colors ${filterCategory === 'Casual conversation' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
-              >
-                Casual conversation
-              </button>
-              <button
-                onClick={() => setFilterCategory('Workplace')}
-                className={`px-4 py-2 rounded-full font-semibold transition-colors ${filterCategory === 'Workplace' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
-              >
-                Workplace
-              </button>
-              <button
-                onClick={() => setFilterCategory('Ordering food')}
-                className={`px-4 py-2 rounded-full font-semibold transition-colors ${filterCategory === 'Ordering food' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
-              >
-                Ordering food
-              </button>
-            </div>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="flex items-center px-6 py-3 text-white font-semibold rounded-full shadow-lg transition-colors transform hover:scale-105"
-              style={{
-                background: 'linear-gradient(45deg, #F00000, #F15A24, #004690)',
-                backgroundSize: '200% 200%',
-                animation: 'gradient-animation 5s ease infinite'
-              }}
-            >
-              <Plus size={20} className="mr-2" /> Add New Conversation
-            </button>
-            <style>{`
-              @keyframes gradient-animation {
-                0% { background-position: 0% 50%; }
-                50% { background-position: 100% 50%; }
-                100% { background-position: 0% 50%; }
+          // Helper function to update line data
+          const updateLine = (linesArray, setLinesArray, index, field, value) => {
+            const newLines = [...linesArray];
+            newLines[index][field] = value;
+            setLinesArray(newLines);
+          };
+
+          // Helper function to add a new line
+          const addLine = (linesArray, setLinesArray) => {
+            setLinesArray([...linesArray, { speaker: '', text: '' }]);
+          };
+
+          // Helper function to remove a line
+          const removeLine = (linesArray, setLinesArray, index) => {
+            const newLines = linesArray.filter((_, i) => i !== index);
+            setLinesArray(newLines);
+          };
+
+          // Helper function to add a new vocabulary word
+          const addVocabulary = () => {
+            setVocabulary([...vocabulary, { word: '', definition: '' }]);
+          };
+
+          // Helper function to update a vocabulary word
+          const updateVocabulary = (index, field, value) => {
+            const newVocab = [...vocabulary];
+            newVocab[index][field] = value;
+            setVocabulary(newVocab);
+          };
+
+          // Function to submit the new conversation to Firestore
+          const handleSubmit = async (e) => {
+            e.preventDefault();
+            if (!userId) {
+              setError("User not authenticated. Please wait.");
+              return;
+            }
+            setIsSaving(true);
+            setError(null);
+            try {
+              const conversationCollectionRef = collection(window.db, `artifacts/${window.appId}/public/data/conversations`);
+              await addDoc(conversationCollectionRef, {
+                title: title,
+                description: description,
+                category: category,
+                lines: lines.map(line => ({ speaker: line.speaker, text: line.text })),
+                portugueseTranslation: portugueseLines.map(line => ({ speaker: line.speaker, text: line.text })),
+                vocabulary: vocabulary.map(vocab => ({ word: vocab.word, definition: vocab.definition })),
+                createdAt: new Date().toISOString(),
+              });
+              // Reset form after successful submission
+              setTitle('');
+              setDescription('');
+              setLines([{ speaker: '', text: '' }]);
+              setPortugueseLines([{ speaker: '', text: '' }]);
+              setVocabulary([{ word: '', definition: '' }]);
+              onCancel();
+            } catch (e) {
+              console.error("Error adding document: ", e);
+              setError("Failed to save conversation. Please try again.");
+            } finally {
+              setIsSaving(false);
+            }
+          };
+
+          return (
+            React.createElement('div', { className: 'fixed inset-0 bg-gray-900 bg-opacity-70 flex items-center justify-center p-4 z-50' },
+              React.createElement('div', { className: 'bg-gray-800 text-gray-100 rounded-xl shadow-2xl p-6 w-full max-w-4xl max-h-[95vh] overflow-y-auto relative' },
+                React.createElement('button', { onClick: onCancel, className: 'absolute top-4 right-4 p-2 rounded-full text-gray-300 hover:bg-gray-700 transition-colors', 'aria-label': 'Close form' },
+                  React.createElement(X, { size: 24 })
+                ),
+                React.createElement('h2', { className: 'text-3xl font-bold mb-6 text-center text-red-500' }, 'Add New Conversation'),
+                error && (React.createElement('div', { className: 'p-3 mb-4 bg-red-800 text-red-100 rounded-lg text-sm' }, error)),
+                React.createElement('form', { onSubmit: handleSubmit, className: 'space-y-6' },
+                  React.createElement('div', null,
+                    React.createElement('label', { htmlFor: 'title', className: 'block text-sm font-medium text-gray-300 mb-1' }, 'Title'),
+                    React.createElement('input', { type: 'text', id: 'title', value: title, onChange: (e) => setTitle(e.target.value), required: true, className: 'w-full px-4 py-2 border border-gray-600 rounded-md bg-gray-700 text-gray-100 focus:ring-red-500 focus:border-red-500 transition-colors' })
+                  ),
+                  React.createElement('div', null,
+                    React.createElement('label', { htmlFor: 'description', className: 'block text-sm font-medium text-gray-300 mb-1' }, 'Description'),
+                    React.createElement('textarea', { id: 'description', value: description, onChange: (e) => setDescription(e.target.value), rows: '3', className: 'w-full px-4 py-2 border border-gray-600 rounded-md bg-gray-700 text-gray-100 focus:ring-red-500 focus:border-red-500 transition-colors' })
+                  ),
+                  React.createElement('div', null,
+                    React.createElement('label', { htmlFor: 'category', className: 'block text-sm font-medium text-gray-300 mb-1' }, 'Category'),
+                    React.createElement('select', { id: 'category', value: category, onChange: (e) => setCategory(e.target.value), required: true, className: 'w-full px-4 py-2 border border-gray-600 rounded-md bg-gray-700 text-gray-100 focus:ring-red-500 focus:border-red-500 transition-colors' },
+                      React.createElement('option', { value: 'Casual conversation' }, 'Casual conversation'),
+                      React.createElement('option', { value: 'Workplace' }, 'Workplace'),
+                      React.createElement('option', { value: 'Ordering food' }, 'Ordering food'),
+                      React.createElement('option', { value: 'Travel' }, 'Travel'),
+                      React.createElement('option', { value: 'Other' }, 'Other')
+                    )
+                  ),
+
+                  React.createElement('div', { className: 'space-y-4' },
+                    React.createElement('h3', { className: 'text-xl font-semibold text-gray-200' }, 'English Conversation Lines'),
+                    lines.map((line, index) => (
+                      React.createElement('div', { key: index, className: 'flex space-x-2 items-center bg-gray-700 p-3 rounded-lg border border-gray-600' },
+                        React.createElement('input', { type: 'text', placeholder: 'Speaker Name', value: line.speaker, onChange: (e) => updateLine(lines, setLines, index, 'speaker', e.target.value), className: 'w-1/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100', required: true }),
+                        React.createElement('textarea', { placeholder: 'Dialogue Text', value: line.text, onChange: (e) => updateLine(lines, setLines, index, 'text', e.target.value), className: 'w-2/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100', rows: '1', required: true }),
+                        React.createElement('button', { type: 'button', onClick: () => removeLine(lines, setLines, index), className: 'p-2 text-red-500 hover:text-red-400 transition-colors', 'aria-label': 'Remove line' }, React.createElement(X, { size: 20 }))
+                      )
+                    )),
+                    React.createElement('button', { type: 'button', onClick: () => addLine(lines, setLines), className: 'w-full flex items-center justify-center px-4 py-2 border border-dashed border-gray-500 rounded-md text-gray-300 hover:bg-gray-700 transition-colors' },
+                      React.createElement(Plus, { size: 20, className: 'mr-2' }), ' Add English line'
+                    )
+                  ),
+
+                  React.createElement('div', { className: 'space-y-4' },
+                    React.createElement('h3', { className: 'text-xl font-semibold text-gray-200' }, 'Portuguese Translation Lines'),
+                    portugueseLines.map((line, index) => (
+                      React.createElement('div', { key: index, className: 'flex space-x-2 items-center bg-gray-700 p-3 rounded-lg border border-gray-600' },
+                        React.createElement('input', { type: 'text', placeholder: 'Speaker Name', value: line.speaker, onChange: (e) => updateLine(portugueseLines, setPortugueseLines, index, 'speaker', e.target.value), className: 'w-1/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100', required: true }),
+                        React.createElement('textarea', { placeholder: 'Dialogue Text', value: line.text, onChange: (e) => updateLine(portugueseLines, setPortugueseLines, index, 'text', e.target.value), className: 'w-2/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100', rows: '1', required: true }),
+                        React.createElement('button', { type: 'button', onClick: () => removeLine(portugueseLines, setPortugueseLines, index), className: 'p-2 text-red-500 hover:text-red-400 transition-colors', 'aria-label': 'Remove line' }, React.createElement(X, { size: 20 }))
+                      )
+                    )),
+                    React.createElement('button', { type: 'button', onClick: () => addLine(portugueseLines, setPortugueseLines), className: 'w-full flex items-center justify-center px-4 py-2 border border-dashed border-gray-500 rounded-md text-gray-300 hover:bg-gray-700 transition-colors' },
+                      React.createElement(Plus, { size: 20, className: 'mr-2' }), ' Add Portuguese line'
+                    )
+                  ),
+
+                  React.createElement('div', { className: 'space-y-4' },
+                    React.createElement('h3', { className: 'text-xl font-semibold text-gray-200' }, 'Vocabulary'),
+                    vocabulary.map((vocab, index) => (
+                      React.createElement('div', { key: index, className: 'flex space-x-2 items-center bg-gray-700 p-3 rounded-lg border border-gray-600' },
+                        React.createElement('input', { type: 'text', placeholder: 'Word', value: vocab.word, onChange: (e) => updateVocabulary(index, 'word', e.target.value), className: 'w-1/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100', required: true }),
+                        React.createElement('input', { type: 'text', placeholder: 'Definition', value: vocab.definition, onChange: (e) => updateVocabulary(index, 'definition', e.target.value), className: 'w-2/3 px-3 py-2 border border-gray-600 rounded-md text-sm bg-gray-600 text-gray-100', required: true })
+                      )
+                    )),
+                    React.createElement('button', { type: 'button', onClick: addVocabulary, className: 'w-full flex items-center justify-center px-4 py-2 border border-dashed border-gray-500 rounded-md text-gray-300 hover:bg-gray-700 transition-colors' },
+                      React.createElement(Plus, { size: 20, className: 'mr-2' }), ' Add vocabulary word'
+                    )
+                  ),
+
+                  React.createElement('button', { type: 'submit', disabled: isSaving, className: 'w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed' },
+                    isSaving ? 'Saving...' : 'Save Conversation'
+                  )
+                )
+              )
+            )
+          );
+        };
+
+        // Function to highlight a specific phrase in the text
+        const HighlightText = ({ text, highlights }) => {
+          if (!highlights || highlights.length === 0) {
+            return React.createElement('span', null, text);
+          }
+          const regex = new RegExp(`(${highlights.join('|')})`, 'gi');
+          const parts = text.split(regex);
+
+          return React.createElement(
+            'span',
+            null,
+            parts.map((part, i) =>
+              highlights.some(h => part.toLowerCase() === h.toLowerCase()) ? (
+                React.createElement(
+                  'span',
+                  { key: i, className: 'bg-yellow-400 text-gray-900 font-bold px-1 rounded-sm' },
+                  part
+                )
+              ) : (
+                part
+              )
+            )
+          );
+        };
+
+        // Main application component
+        const App = () => {
+          const [userId, setUserId] = React.useState(null);
+          const [loading, setLoading] = React.useState(true);
+          const [conversations, setConversations] = React.useState([]);
+          const [selectedConversation, setSelectedConversation] = React.useState(null);
+          const [showAddForm, setShowAddForm] = React.useState(false);
+          const [authReady, setAuthReady] = React.useState(false);
+          const [filterCategory, setFilterCategory] = React.useState('All');
+          const [language, setLanguage] = React.useState('en'); // 'en' for English, 'pt' for Portuguese
+          const [showVocabulary, setShowVocabulary] = React.useState(false);
+
+          // Effect to handle Firebase authentication
+          React.useEffect(() => {
+            const token = window.__initial_auth_token;
+            const authenticate = async () => {
+              try {
+                if (token) {
+                  await signInWithCustomToken(window.auth, token);
+                } else {
+                  await signInAnonymously(window.auth);
+                }
+              } catch (error) {
+                console.error("Firebase authentication error:", error);
+              } finally {
+                onAuthStateChanged(window.auth, (user) => {
+                  setUserId(user ? user.uid : null);
+                  setAuthReady(true);
+                  setLoading(false);
+                });
               }
-            `}</style>
-          </div>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {filteredConversations.length > 0 ? (
-              filteredConversations.map((conv) => (
-                <div
-                  key={conv.id}
-                  onClick={() => setSelectedConversation(conv)}
-                  className="bg-gray-800 rounded-2xl shadow-md p-6 cursor-pointer transform transition-all duration-200 hover:scale-[1.03] hover:shadow-xl hover:shadow-red-500/20"
-                >
-                  <h3 className="text-2xl font-bold text-red-500 mb-2">{conv.title}</h3>
-                  <p className="text-gray-300 line-clamp-3">{conv.description}</p>
-                </div>
-              ))
-            ) : (
-              <p className="text-center text-gray-500 text-lg col-span-3">
-                No conversations available in this category.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-      {showAddForm && <AddConversationForm userId={userId} onCancel={() => setShowAddForm(false)} />}
-    </div>
-  );
-};
+            };
+            authenticate();
+          }, []);
 
-export default App;
+          // Effect to listen for real-time conversation updates
+          React.useEffect(() => {
+            if (authReady) {
+              const collectionPath = `artifacts/${window.appId}/public/data/conversations`;
+              const q = query(collection(window.db, collectionPath));
+              const unsubscribe = onSnapshot(q, (querySnapshot) => {
+                const conversationsData = [];
+                querySnapshot.forEach((doc) => {
+                  conversationsData.push({ id: doc.id, ...doc.data() });
+                });
+                setConversations(conversationsData);
+              }, (error) => {
+                console.error("Error fetching conversations:", error);
+              });
+              return () => unsubscribe();
+            }
+          }, [authReady]);
+
+          // Filter conversations based on the selected category
+          const filteredConversations = conversations.filter(conv =>
+            filterCategory === 'All' || conv.category === filterCategory
+          );
+
+          const vocabularyHighlights = selectedConversation ? selectedConversation.vocabulary.map(v => v.word).concat('Burger King') : [];
+
+          if (loading) {
+            return React.createElement(
+              'div',
+              { className: 'flex items-center justify-center min-h-screen bg-gray-950' },
+              React.createElement('p', { className: 'text-xl text-gray-300' }, 'Loading website...')
+            );
+          }
+
+          return React.createElement(
+            'div',
+            { className: 'font-sans antialiased text-gray-100 bg-gray-950 min-h-screen p-4 sm:p-8' },
+            React.createElement(
+              'div',
+              { className: 'fixed top-2 right-2 text-xs text-gray-400 bg-gray-800 p-2 rounded-md z-50' },
+              'Admin User ID: ', userId
+            ),
+            React.createElement(
+              'header',
+              { className: 'text-center mb-10' },
+              React.createElement('h1', { className: 'text-5xl font-extrabold text-red-500 mb-2' }, 'Immersion English'),
+              React.createElement('p', { className: 'text-xl text-gray-400' }, 'Real-life conversations from the UK & USA')
+            ),
+
+            selectedConversation ? (
+              React.createElement(
+                'div',
+                { className: 'max-w-4xl mx-auto bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-10 transition-transform transform hover:scale-[1.01] duration-300' },
+                React.createElement(
+                  'div',
+                  { className: 'flex justify-between items-center mb-6' },
+                  React.createElement(
+                    'button',
+                    {
+                      onClick: () => { setSelectedConversation(null); setLanguage('en'); setShowVocabulary(false); },
+                      className: 'flex items-center text-blue-500 hover:text-blue-400 transition-colors font-medium'
+                    },
+                    React.createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-5 w-5 mr-1', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10 19l-7-7m0 0l7-7m-7 7h18' })
+                    ),
+                    'Back to Conversations'
+                  ),
+                  React.createElement(
+                    'div',
+                    { className: 'flex space-x-2' },
+                    React.createElement(
+                      'button',
+                      {
+                        onClick: () => setLanguage(language === 'en' ? 'pt' : 'en'),
+                        className: 'flex items-center px-4 py-2 bg-gray-700 text-gray-100 rounded-full hover:bg-gray-600 transition-colors'
+                      },
+                      React.createElement(Globe, { size: 18, className: 'mr-2' }),
+                      language === 'en' ? 'Ver em Português' : 'See in English'
+                    ),
+                    React.createElement(
+                      'button',
+                      {
+                        onClick: () => setShowVocabulary(!showVocabulary),
+                        className: 'flex items-center px-4 py-2 bg-gray-700 text-gray-100 rounded-full hover:bg-gray-600 transition-colors'
+                      },
+                      React.createElement(BookOpen, { size: 18, className: 'mr-2' }),
+                      'Vocabulary'
+                    )
+                  )
+                ),
+                React.createElement('h2', { className: 'text-4xl font-bold mb-3 text-red-500' }, selectedConversation.title),
+                React.createElement('p', { className: 'text-lg text-gray-300 mb-8' }, selectedConversation.description),
+                
+                showVocabulary && selectedConversation.vocabulary && selectedConversation.vocabulary.length > 0 && (
+                  React.createElement(
+                    'div',
+                    { className: 'bg-gray-900 rounded-xl p-4 mb-8 border border-gray-700' },
+                    React.createElement('h3', { className: 'text-2xl font-bold text-red-500 mb-4' }, 'Vocabulary'),
+                    React.createElement(
+                      'ul',
+                      { className: 'grid grid-cols-1 sm:grid-cols-2 gap-4' },
+                      selectedConversation.vocabulary.map((vocab, index) => (
+                        React.createElement(
+                          'li',
+                          { key: index, className: 'p-3 bg-gray-800 rounded-lg' },
+                          React.createElement('p', { className: 'font-bold text-lg text-blue-400' }, vocab.word),
+                          React.createElement('p', { className: 'text-sm text-gray-300' }, vocab.definition)
+                        )
+                      ))
+                    )
+                  )
+                ),
+
+                React.createElement(
+                  'div',
+                  { className: 'space-y-6' },
+                  (language === 'en' ? selectedConversation.lines : selectedConversation.portugueseTranslation).map((line, index) => (
+                    React.createElement(
+                      'div',
+                      { key: index, className: `flex ${index % 2 === 0 ? 'justify-start' : 'justify-end'}` },
+                      React.createElement(
+                        'div',
+                        { className: `max-w-[80%] rounded-xl shadow-sm p-4 ${index % 2 === 0 ? 'bg-blue-600 text-white rounded-bl-none' : 'bg-red-600 text-white rounded-br-none'}` },
+                        React.createElement('p', { className: 'font-semibold text-lg mb-1' }, line.speaker),
+                        React.createElement(
+                          'p',
+                          { className: 'text-base' },
+                          React.createElement(HighlightText, {
+                            text: line.text,
+                            highlights: vocabularyHighlights
+                          })
+                        )
+                      )
+                    )
+                  ))
+                )
+              )
+            ) : (
+              React.createElement(
+                'div',
+                { className: 'max-w-6xl mx-auto' },
+                React.createElement(
+                  'div',
+                  { className: 'flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0' },
+                  React.createElement(
+                    'div',
+                    { className: 'flex flex-wrap gap-2' },
+                    React.createElement(
+                      'button',
+                      {
+                        onClick: () => setFilterCategory('All'),
+                        className: `px-4 py-2 rounded-full font-semibold transition-colors ${filterCategory === 'All' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`
+                      },
+                      'All'
+                    ),
+                    React.createElement(
+                      'button',
+                      {
+                        onClick: () => setFilterCategory('Casual conversation'),
+                        className: `px-4 py-2 rounded-full font-semibold transition-colors ${filterCategory === 'Casual conversation' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`
+                      },
+                      'Casual conversation'
+                    ),
+                    React.createElement(
+                      'button',
+                      {
+                        onClick: () => setFilterCategory('Workplace'),
+                        className: `px-4 py-2 rounded-full font-semibold transition-colors ${filterCategory === 'Workplace' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`
+                      },
+                      'Workplace'
+                    ),
+                    React.createElement(
+                      'button',
+                      {
+                        onClick: () => setFilterCategory('Ordering food'),
+                        className: `px-4 py-2 rounded-full font-semibold transition-colors ${filterCategory === 'Ordering food' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`
+                      },
+                      'Ordering food'
+                    )
+                  ),
+                  React.createElement(
+                    'button',
+                    {
+                      onClick: () => setShowAddForm(true),
+                      className: 'flex items-center px-6 py-3 text-white font-semibold rounded-full shadow-lg transition-colors transform hover:scale-105',
+                      style: {
+                        background: 'linear-gradient(45deg, #F00000, #F15A24, #004690)',
+                        backgroundSize: '200% 200%',
+                        animation: 'gradient-animation 5s ease infinite'
+                      }
+                    },
+                    React.createElement(Plus, { size: 20, className: 'mr-2' }),
+                    'Add New Conversation'
+                  )
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'grid gap-6 md:grid-cols-2 lg:grid-cols-3' },
+                  filteredConversations.length > 0 ? (
+                    filteredConversations.map((conv) => (
+                      React.createElement(
+                        'div',
+                        {
+                          key: conv.id,
+                          onClick: () => setSelectedConversation(conv),
+                          className: 'bg-gray-800 rounded-2xl shadow-md p-6 cursor-pointer transform transition-all duration-200 hover:scale-[1.03] hover:shadow-xl hover:shadow-red-500/20'
+                        },
+                        React.createElement('h3', { className: 'text-2xl font-bold text-red-500 mb-2' }, conv.title),
+                        React.createElement('p', { className: 'text-gray-300 line-clamp-3' }, conv.description)
+                      )
+                    ))
+                  ) : (
+                    React.createElement(
+                      'p',
+                      { className: 'text-center text-gray-500 text-lg col-span-3' },
+                      'No conversations available in this category.'
+                    )
+                  )
+                )
+              )
+            ),
+            showAddForm && React.createElement(AddConversationForm, { userId: userId, onCancel: () => setShowAddForm(false) })
+          );
+        };
+
+        // Render the React application
+        ReactDOM.render(React.createElement(App, null), document.getElementById('root'));
+    </script>
+</body>
+</html>
